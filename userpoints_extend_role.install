@@ -1,0 +1,85 @@
+<?php
+
+/****
+ * Implement hook_schema
+ */
+function userpoints_extend_role_schema() {
+  $schema['userpoints_extend_role'] = array(
+    'description' => 'Role extensions based on userpoints',
+    'fields' => array(
+      'uerid' => array(
+        'description' => 'Primary key: the userpoint_extend_role id',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'uid' => array(
+        'description' => 'The user id of the user whose role is extended',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'rid' => array(
+        'description' => 'The role id of the role being extended',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'txn_id' => array(
+        'description' => 'The id of the points transaction that prompted the extension',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'timestamp' => array(
+        'description' => 'The Unix timestamp indicating when the role extension was awarded',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'old_expiry' => array(
+        'description' => 'The expiry before the extension',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'extension_string' => array(
+        'description' => 'The string describing the extension amount',
+        'type' => 'varchar',
+        'length' => 64,
+      ),
+      'new_expiry' => array(
+        'description' => 'The expiry after the extension',
+        'type' => 'int',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'indexes' => array(
+      'uid' => array('uid'),
+      'rid' => array('rid'),
+    ),
+    'primary key' => array('uerid'),
+  );
+
+  return $schema;
+}
+
+/***
+ * Implements hook_install()
+ */
+function userpoints_extend_role_install() {
+  drupal_install_schema('userpoints_extend_role');
+}
+
+/**
+ * Implements hook_uninstall()
+ */
+function userpoints_extend_role_uninstall() {
+  drupal_uninstall_schema('userpoints_extend_role');
+  db_query("DELETE FROM {variable} WHERE name LIKE 'userpoints_extend_role_%%'");
+}
+
