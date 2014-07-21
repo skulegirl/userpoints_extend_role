@@ -7,7 +7,10 @@ define('USERPOINTS_EXTEND_ROLE_THRESHOLD_MULTIPLE', 'userpoints_extend_role_thre
 define('USERPOINTS_EXTEND_ROLE_ROLES', 'userpoints_extend_role_roles');
 define('USERPOINTS_EXTEND_ROLE_AMOUNT', 'userpoints_extend_role_amount');
 
-function userpoints_extend_role_userpoints($op, $params = array())
+/**
+ * Implement hook_userpoints
+ */
+function userpoints_extend_role_userpoints($op, &$params = array())
 {
   switch($op) {
     case 'setting':
@@ -69,8 +72,12 @@ function userpoints_extend_role_userpoints($op, $params = array())
 
 function userpoints_extend_role_uc_roles_grant($account, $rid, $timestamp)
 {
-  $points = userpoints_get_current_points($account->uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
-  _userpoints_extend_role($account->uid, $points, 0);
+  // Only do this if the account is brand new!
+  if ($account->access <= 0)
+  {
+    $points = userpoints_get_current_points($account->uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
+    _userpoints_extend_role($account->uid, $points, 0);
+  }
 }
 
 function _userpoints_extend_role($uid, $points, $txn_id)
@@ -117,23 +124,37 @@ function _userpoints_extend_role($uid, $points, $txn_id)
   {
     foreach ($roles as $rid => $rolename)
     {
-      if ($expiry = db_result(db_query_range('select expiration from {uc_roles_expirations} where uid = %d AND rid = %d', 
-        $uid, $rid, 0, 1)))
+      if ($expiry = db_query_range('select expiration from {uc_roles_expirations} where uid = :uid AND rid = :rid', 0, 1, array(
+          ':uid' => $uid,
+          ':rid' => $rid,
+        ))->fetchField())
       {
         // then there wan an expiry date for this role and user. Increment it.
         $expiry_incr_string = '+' . $num_thresh_passed * $extend_months . 'months';
         $new_expiry = strtotime($expiry_incr_string, $expiry);
 
-        if(db_query("UPDATE {uc_roles_expirations} SET expiration = %d, notified = NULL WHERE uid = %d AND rid = %d", $new_expiry, 
-          $uid, $rid))
+        if(db_query("UPDATE {uc_roles_expirations} SET expiration = :expiration, notified = NULL WHERE uid = :uid AND rid = :rid", 
+          array(
+            ':expiration' => $new_expiry, 
+            ':uid' => $uid, 
+            ':rid' =>$rid
+          )))
         {
           // success - note in log and add db row
           watchdog('up_extend_role', 'Role !role for user !user has had expiry date extended from !oldexpiry to !newexpiry',
             array('!role' => $rolename, '!user' => $uid, '!oldexpiry' => format_date($expiry), 
               '!newexpiry' => format_date($new_expiry)), WATCHDOG_INFO);
 
-          db_query("INSERT INTO {userpoints_extend_role} (uid, rid, txn_id, timestamp, old_expiry, extension_string, new_expiry) VALUES (%d, %d, %d, %d, %d, '%s', %d)",
-            $uid, $rid, $txn_id, time(), $expiry, $expiry_incr_string, $new_expiry);
+          db_query("INSERT INTO {userpoints_extend_role} (uid, rid, txn_id, timestamp, old_expiry, extension_string, new_expiry) VALUES (:uid, :rid, :txn_id, :timestamp, :expiry, :expiry_incr_string, :new_expiry)",
+          array(
+            ':uid' => $uid, 
+            ':rid' => $rid, 
+            ':txn_id' => $txn_id, 
+            ':timestamp' => time(), 
+            ':expiry' => $expiry, 
+            ':expiry_incr_string' => $expiry_incr_string, 
+            ':new_expiry' => $new_expiry
+          ));
         }
       }
     }
