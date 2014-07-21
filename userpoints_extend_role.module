@@ -69,8 +69,12 @@ function userpoints_extend_role_userpoints($op, $params = array())
 
 function userpoints_extend_role_uc_roles_grant($account, $rid, $timestamp)
 {
-  $points = userpoints_get_current_points($account->uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
-  _userpoints_extend_role($account->uid, $points, 0);
+  // Only do this if the account is brand new!
+  if ($account->access <= 0)
+  {
+    $points = userpoints_get_current_points($account->uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
+    _userpoints_extend_role($account->uid, $points, 0);
+  }
 }
 
 function _userpoints_extend_role($uid, $points, $txn_id)
