@@ -65,6 +65,51 @@ function userpoints_extend_role_schema() {
     'primary key' => array('uerid'),
   );
 
+  $schema['userpoints_extend_role_rules'] = array(
+    'description' => 'Rules for role extensions based on userpoints',
+    'fields' => array(
+      'rid' => array(
+        'description' => 'Primary key: the userpoint_extend_role_rule id',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'weight' => array(
+        'description' => 'The weight of the rule (lightest are applied first)',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'categorytid' => array(
+        'description' => 'The taxonomy id of the category of userpoints for rule',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'multiple_threshold' => array(
+        'description' => 'The multiple at which the role should be extended',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 10,
+      ),
+      'roles' => array(
+        'description' => 'Roles to extend when multiple is reached',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'extend_amount' => array(
+        'description' => 'The amount to extend role, in months',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 1,
+      ),
+    ),
+    'primary key' => array('rid'),
+  );
+
   return $schema;
 }
 
@@ -83,3 +128,72 @@ function userpoints_extend_role_uninstall() {
   db_query("DELETE FROM {variable} WHERE name LIKE 'userpoints_extend_role_%%'");
 }
 
+/**
+ * Add the userpoints_extend_role_rules table
+ */
+function userpoints_extend_role_update_7100() {
+  $schema['userpoints_extend_role_rules'] = array(
+    'description' => 'Rules for role extensions based on userpoints',
+    'fields' => array(
+      'rid' => array(
+        'description' => 'Primary key: the userpoint_extend_role_rule id',
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'weight' => array(
+        'description' => 'The weight of the rule (lightest are applied first)',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'categorytid' => array(
+        'description' => 'The taxonomy id of the category of userpoints for rule',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'multiple_threshold' => array(
+        'description' => 'The multiple at which the role should be extended',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 10,
+      ),
+      'roles' => array(
+        'description' => 'Roles to extend when multiple is reached',
+        'type' => 'text',
+        'not null' => TRUE,
+      ),
+      'extend_amount' => array(
+        'description' => 'The amount to extend role, in months',
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 1,
+      ),
+    ),
+    'primary key' => array('rid'),
+  );
+  db_create_table('userpoints_extend_role_rules', $schema['userpoints_extend_role_rules']); 
+}
+
+/**
+ * Migrate current settings to new table and delete old variables
+ */
+function userpoints_extend_role_update_7101() {
+  $tid = variable_get('userpoints_extend_role_tid', 0);
+  if ($tid != 0)
+  {
+    db_insert('userpoints_extend_role_rules')
+      ->fields(array(
+        'categorytid' => $tid,
+        'multiple_threshold' => variable_get('userpoints_extend_role_threshold_mult', 10),
+        'roles' => serialize(array_filter(variable_get('userpoints_extend_role_roles', array()))),
+        'extend_amount' => variable_get('userpoints_extend_role_amount', 1)))
+      ->execute();
+  }
+  db_query("DELETE FROM {variable} WHERE name LIKE 'userpoints_extend_role_%%'");
+
+}

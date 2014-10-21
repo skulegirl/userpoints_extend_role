@@ -10,57 +10,47 @@ define('USERPOINTS_EXTEND_ROLE_AMOUNT', 'userpoints_extend_role_amount');
 /**
  * Implement hook_userpoints
  */
-function userpoints_extend_role_userpoints($op, &$params = array())
+function userpoints_extend_role_menu()
 {
-  switch($op) {
-    case 'setting':
-      $group = 'extend_role';
-      $form[$group] = array(
-        '#type'           => 'fieldset',
-        '#collapsible'    => TRUE,
-        '#collapsed'      => TRUE,
-        '#title'          => t('Extend role expiry with points thresholds', userpoints_translation()),
-      );      
+  $items['admin/config/people/userpoints-extend-role'] = array(
+    'title' => t('!Points Extend Role Rules', userpoints_translation()),
+    'description' => 'Set up rules for extensions of roles when userpoints are awarded',
+    'page callback' => 'userpoints_extend_role_overview',
+    'access arguments' => array('administer users'),
+    'file' => 'userpoints_extend_role.admin.inc',
+    'weight' => 10,
+  );
+  $items['admin/config/people/userpoints-extend-role/add'] = array(
+    'title' => t('Add !Points Extend Role Rule', userpoints_translation()),
+    'description' => 'Add a rule for extension of roles when userpoints are awarded',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('userpoints_extend_role_edit_form'),
+    'access arguments' => array('administer users'),
+    'type' => MENU_LOCAL_ACTION,
+    'weight' => 1,
+    'file' => 'userpoints_extend_role.admin.inc',
+  );
+  $items['admin/config/people/userpoints-extend-role/edit/%userpoints_extend_role_rule'] = array(
+    'title' => t('Edit !Points Extend Role Rule', userpoints_translation()),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('userpoints_extend_role_edit_form', 5),
+    'access arguments' => array('administer users'),
+    'file' => 'userpoints_extend_role.admin.inc',
+  );
+  $items['admin/config/people/userpoints-extend-role/delete/%userpoints_extend_role_rule'] = array(
+    'title' => t('Delete !Points Extend Role Rule', userpoints_translation()),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('userpoints_extend_role_delete_form', 5),
+    'access arguments' => array('administer users'),
+    'file' => 'userpoints_extend_role.admin.inc',
+  );
 
-      $form[$group][USERPOINTS_EXTEND_ROLE_TID] = array(
-        '#type'           => 'select',
-        '#title'          => t('Category'),
-        '#default_value'  => variable_get(USERPOINTS_EXTEND_ROLE_TID, 0),
-        '#options'        => userpoints_get_categories(),
-        '#description'    => t('Userpoints of this category will be used to determine if the role expiration should be extended. You can modify what categories are available by modifying the <a href="!url">Userpoints taxonomy</a>',
-          array('!url' => url('admin/content/taxonomy/' . variable_get(USERPOINTS_CATEGORY_DEFAULT_VID, '')))),
-      );
+  return $items;
+}
 
-      $form[$group][USERPOINTS_EXTEND_ROLE_THRESHOLD_MULTIPLE] = array(
-        '#type'           => 'textfield',
-        '#title'          => t('!Points multiple for extending role expiry', userpoints_translation()),
-        '#default_value'  => variable_get(USERPOINTS_EXTEND_ROLE_THRESHOLD_MULTIPLE, 0),
-        '#size'           => 5,
-        '#maxlength'      => 5,
-        '#description'    => t('The multiple of points for which the role expiry will be extended. For example, if set to 30, then after each multiple of 30 ponts of the specified category, the role will be extended by the amount of time configured below. Leaving at default of 0 will not perform any extensions.'),
-      );
-
-      $form[$group][USERPOINTS_EXTEND_ROLE_ROLES] = array(
-        '#type'           => 'checkboxes',
-        '#title'          => t('Roles'),
-        '#default_value'  => variable_get(USERPOINTS_EXTEND_ROLE_ROLES, array()),
-        '#options'        => user_roles(TRUE),
-        '#description'     => t('Role(s) to extend when points cross threshold multiple boundary.  If the user doesn\'t have an expiry for that role, it wil fail silently and go on to the next role.'),
-      );
-
-      $form[$group][USERPOINTS_EXTEND_ROLE_AMOUNT] = array(
-        '#type'           => 'textfield',
-        '#title'          => t('Time to extend role expiration by, in months'),
-        '#default_value'  => variable_get(USERPOINTS_EXTEND_ROLE_AMOUNT, 0),
-        '#size'           => 5,
-        '#maxlength'      => 5,
-        '#description'    => t('Number of months to extend the role(s) expirations by when each threshold level is passed.'),
-      );
-
-      return $form;
-    case 'points after':
-      _userpoints_extend_role($params['uid'], $params['points'], $params['txn_id']);
-      break;
+function userpoints_extend_role_userpoints($op, $params = array()) {
+  if ($op ==  'points after') {
+    _userpoints_extend_role($params['uid'], $params['points'], $params['txn_id'], $params['tid']);
   }
 }
 
@@ -75,88 +65,152 @@ function userpoints_extend_role_uc_roles_grant($account, $rid, $timestamp)
   // Only do this if the account is brand new!
   if ($account->access <= 0)
   {
-    $points = userpoints_get_current_points($account->uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
-    _userpoints_extend_role($account->uid, $points, 0);
+    _userpoints_extend_role($account->uid, 0, 0, 0, TRUE);
   }
 }
 
-function _userpoints_extend_role($uid, $points, $txn_id)
+function _userpoints_extend_role($uid, $points, $txn_id, $tid, $new_account = FALSE)
 {
   if ($points < 0)
   {
-    // do nothing for zero points or points lost
-    return;
-  }
-  $new_points = userpoints_get_current_points($uid, variable_get(USERPOINTS_EXTEND_ROLE_TID, 0));
-  if ($new_points <= 0)
-  {
-    // no points, nothing to do
-    return;
-  } 
-  $threshold = variable_get(USERPOINTS_EXTEND_ROLE_THRESHOLD_MULTIPLE, 0);
-  if ($threshold == 0)
-  {
-    // no threshold set, nothing to do
+    // do nothing for negative points
     return;
   }
 
-  $roles = variable_get(USERPOINTS_EXTEND_ROLE_ROLES, array());
-  $roles = array_filter($roles);
-  if (empty($roles))
-  {
-    // no roles set, nothing to do
-    return;
-  }
+  $result = db_select('userpoints_extend_role_rules', 'r')
+    ->fields('r', array('rid', 'categorytid', 'multiple_threshold', 'roles', 'extend_amount'))
+    ->orderBy('weight')
+    ->execute()
+    ->fetchAll();
 
-  $extend_months = variable_get(USERPOINTS_EXTEND_ROLE_AMOUNT, 0);
-  if ($extend_months == 0)
+  foreach ($result as $rule)
   {
-    // no extension amount set, nothing to do
-    return;
-  }
-
-  $old_points = $new_points - $points;
-
-  // Number of thresholds passed is calculated with old points that were above last threshold,
-  // plus the new points
-  $num_thresh_passed = floor((($old_points % $threshold) + $points) / $threshold); 
-  if ($num_thresh_passed > 0)
-  {
-    foreach ($roles as $rid => $rolename)
+    $rule->roles = array_map('check_plain', unserialize($rule->roles));
+    if ($new_account)
     {
-      if ($expiry = db_query_range('select expiration from {uc_roles_expirations} where uid = :uid AND rid = :rid', 0, 1, array(
-          ':uid' => $uid,
-          ':rid' => $rid,
-        ))->fetchField())
+      // any points currently assigned can all be assumed to have been just 
+      // allocated. Do this for all tids and rules
+      $points = userpoints_get_current_points($uid, $rule->categorytid);
+    }
+    else 
+    {
+      // check if the tid passed in matches this rule
+      if ($rule->categorytid != $tid)
       {
-        // then there wan an expiry date for this role and user. Increment it.
-        $expiry_incr_string = '+' . $num_thresh_passed * $extend_months . 'months';
-        $new_expiry = strtotime($expiry_incr_string, $expiry);
+        // if not, skip it.
+        continue;
+      }
+    }
+    $new_total_points = userpoints_get_current_points($uid, $rule->categorytid);
+    if ($new_total_points <= 0)
+    {
+      // no points, nothing to do
+      return;
+    } 
+    if ($rule->multiple_threshold == 0)
+    {
+      // no threshold set, nothing to do
+      return;
+    }
 
-        if(db_query("UPDATE {uc_roles_expirations} SET expiration = :expiration, notified = NULL WHERE uid = :uid AND rid = :rid", 
-          array(
-            ':expiration' => $new_expiry, 
-            ':uid' => $uid, 
-            ':rid' =>$rid
-          )))
+    if (empty($rule->roles))
+    {
+      // no roles set, nothing to do
+      return;
+    }
+
+    if ($rule->extend_amount == 0)
+    {
+      // no extension amount set, nothing to do
+      return;
+    }
+
+    $old_total_points = $new_total_points - $points;
+
+    // Number of thresholds passed is calculated with old points that were 
+    // above last threshold, plus the new points
+    $num_thresh_passed = 
+      floor((($old_total_points % $rule->multiple_threshold) + $points) / 
+        $rule->multiple_threshold); 
+    if ($num_thresh_passed > 0)
+    {
+      foreach ($rule->roles as $rid => $rolename)
+      {
+        if ($expiry = db_query_range('select expiration from {uc_roles_expirations} where uid = :uid AND rid = :rid', 0, 1, array(
+            ':uid' => $uid,
+            ':rid' => $rid,
+          ))->fetchField())
         {
-          // success - note in log and add db row
-          watchdog('up_extend_role', 'Role !role for user !user has had expiry date extended from !oldexpiry to !newexpiry',
-            array('!role' => $rolename, '!user' => $uid, '!oldexpiry' => format_date($expiry), 
-              '!newexpiry' => format_date($new_expiry)), WATCHDOG_INFO);
+          // then there wan an expiry date for this role and user. Increment it.
+          $expiry_incr_string = '+' . $num_thresh_passed * $rule->extend_amount . 'months';
+          $new_expiry = strtotime($expiry_incr_string, $expiry);
 
-          db_query("INSERT INTO {userpoints_extend_role} (uid, rid, txn_id, timestamp, old_expiry, extension_string, new_expiry) VALUES (:uid, :rid, :txn_id, :timestamp, :expiry, :expiry_incr_string, :new_expiry)",
-          array(
-            ':uid' => $uid, 
-            ':rid' => $rid, 
-            ':txn_id' => $txn_id, 
-            ':timestamp' => time(), 
-            ':expiry' => $expiry, 
-            ':expiry_incr_string' => $expiry_incr_string, 
-            ':new_expiry' => $new_expiry
-          ));
+          if(db_query("UPDATE {uc_roles_expirations} SET expiration = :expiration, notified = NULL WHERE uid = :uid AND rid = :rid", 
+            array(
+              ':expiration' => $new_expiry, 
+              ':uid' => $uid, 
+              ':rid' =>$rid
+            )))
+          {
+            // success - note in log and add db row
+            watchdog('up_extend_role', 'Role !role for user !user has had expiry date extended from !oldexpiry to !newexpiry',
+              array('!role' => $rolename, '!user' => $uid, '!oldexpiry' => format_date($expiry), 
+                '!newexpiry' => format_date($new_expiry)), WATCHDOG_INFO);
+
+            db_query("INSERT INTO {userpoints_extend_role} (uid, rid, txn_id, timestamp, old_expiry, extension_string, new_expiry) VALUES (:uid, :rid, :txn_id, :timestamp, :expiry, :expiry_incr_string, :new_expiry)",
+            array(
+              ':uid' => $uid, 
+              ':rid' => $rid, 
+              ':txn_id' => $txn_id, 
+              ':timestamp' => time(), 
+              ':expiry' => $expiry, 
+              ':expiry_incr_string' => $expiry_incr_string, 
+              ':new_expiry' => $new_expiry
+            ));
+          }
+          module_invoke_all('userpoints_role_extended', $uid, $rid, $txn_id, $expiry, $new_expiry, $rule->categorytid);
         }
       }
     }
   }
+}
+
+/**
+ * Implements hook_theme
+ */
+function userpoints_extend_role_theme() {
+  return array(
+    'userpoints_extend_role_categorytid' => array(
+      'variables' => array('categorytid' => NULL),
+      'file' => 'userpoints_extend_role.admin.inc',
+    ),
+    'userpoints_extend_role_multiple_threshold' => array(
+      'variables' => array('multiple_threshold' => NULL),
+      'file' => 'userpoints_extend_role.admin.inc',
+    ),
+    'userpoints_extend_role_roles' => array(
+      'variables' => array('items' => NULL),
+      'file' => 'userpoints_extend_role.admin.inc',
+    ),
+    'userpoints_extend_role_extend_amount' => array(
+      'variables' => array('extend_amount' => NULL),
+      'file' => 'userpoints_extend_role.admin.inc',
+    ),
+  );
+}
+
+/** 
+ * Load a userpoints extend role rule.
+ */
+function userpoints_extend_role_rule_load($rid) {
+  $result = db_select('userpoints_extend_role_rules', 'r')
+    ->fields('r')
+    ->condition('rid', $rid)
+    ->execute()
+    ->fetchAssoc();
+  $result['roles'] = unserialize($result['roles']);
+  if (empty($result['roles'])) {
+    $result['roles'] = array();
+  }
+  return $result;
 }
