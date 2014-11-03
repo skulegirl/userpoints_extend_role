@@ -47,7 +47,7 @@ function userpoints_extend_role_menu()
 
 function userpoints_extend_role_userpoints($op, $params = array()) {
   if ($op ==  'points after') {
-    if (isset($params['moderate']))
+    if (isset($params['moderate']) && $params['moderate']==1)
     {
       // don't run if we still need to moderate the points - we'll be 
       // called again once they're been approved
