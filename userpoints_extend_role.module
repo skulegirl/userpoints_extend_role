@@ -2,10 +2,7 @@
 
 // Copyright 2014 Anna Maste
 
-define('USERPOINTS_EXTEND_ROLE_TID', 'userpoints_extend_role_tid');
-define('USERPOINTS_EXTEND_ROLE_THRESHOLD_MULTIPLE', 'userpoints_extend_role_threshold_mult');
-define('USERPOINTS_EXTEND_ROLE_ROLES', 'userpoints_extend_role_roles');
-define('USERPOINTS_EXTEND_ROLE_AMOUNT', 'userpoints_extend_role_amount');
+define('MAX_DATE', 2147483647);
 
 /**
  * Implement hook_userpoints
@@ -144,6 +141,18 @@ function _userpoints_extend_role($uid, $points, $txn_id, $tid, $new_account = FA
           // then there wan an expiry date for this role and user. Increment it.
           $expiry_incr_string = '+' . $num_thresh_passed * $rule->extend_amount . 'months';
           $new_expiry = strtotime($expiry_incr_string, $expiry);
+
+          if ($new_expiry < 0 || $new_expiry > MAX_DATE) // 2038 problem!
+          {
+            watchdog('up_extend_role',
+            'Could not extend !role role for user !user, overflow error (oldexpiry was !oldexpiry, attempted to add !incr_string).',
+            array('!role' => $rolename, 
+              '!user' => $uid, 
+              '!oldexpiry' => format_date($expiry),
+              '!incr_string' => $expiry_incr_string,
+            ), WATCHDOG_WARNING);
+            return;
+          }
 
           if(db_query("UPDATE {uc_roles_expirations} SET expiration = :expiration, notified = NULL WHERE uid = :uid AND rid = :rid", 
             array(
